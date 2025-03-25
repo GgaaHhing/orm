@@ -23,6 +23,7 @@ type QueryBuilder interface {
 }
 
 type Query struct {
+	// 占位符，Args中的参数通过占位符传入SQL中
 	SQL  string
 	Args []any
 }
