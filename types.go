@@ -22,6 +22,10 @@ type QueryBuilder interface {
 	Build() (*Query, error)
 }
 
+type DeleteBuilder interface {
+	Build() (*Query, error)
+}
+
 type Query struct {
 	// 占位符，Args中的参数通过占位符传入SQL中
 	SQL  string

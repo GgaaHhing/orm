@@ -2,21 +2,38 @@ package orm
 
 import (
 	"context"
-	"fmt"
-	"reflect"
 	"strings"
+	"web/orm/internal/errs"
 )
 
 type Selector[T any] struct {
 	table string
 	// 在where下面有各种条件
 	where []Predicate
+	model *model
 	sb    strings.Builder
 	args  []any
+
+	db *DB
+}
+
+func NewSelector[T any](db *DB) *Selector[T] {
+	return &Selector[T]{
+		db: db,
+		sb: strings.Builder{},
+	}
 }
 
 func (s *Selector[T]) Build() (*Query, error) {
 	s.sb.WriteString("SELECT * FROM ")
+
+	// 解析model
+	var err error
+	s.model, err = s.db.r.get(new(T))
+	if err != nil {
+		return nil, err
+	}
+
 	if s.table != "" {
 		// 防止用户传一些嵌套表名之类的
 		// 干脆如果用户有特殊需求，就自己传表名和反引号
@@ -24,10 +41,8 @@ func (s *Selector[T]) Build() (*Query, error) {
 		s.sb.WriteString(s.table)
 		//s.sb.WriteByte('`')
 	} else {
-		var t T
-		typ := reflect.TypeOf(t)
 		s.sb.WriteByte('`')
-		s.sb.WriteString(typ.Name())
+		s.sb.WriteString(s.model.tableName)
 		s.sb.WriteByte('`')
 	}
 
@@ -38,7 +53,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 		for i := 1; i < len(s.where); i++ {
 			p = p.And(s.where[i])
 		}
-		if err := s.buildExpression(p); err != nil {
+		if err = s.buildExpression(p); err != nil {
 			return nil, err
 		}
 	}
@@ -80,8 +95,12 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 		}
 
 	case Column:
+		fd, ok := s.model.fields[exp.name]
+		if !ok {
+			return errs.NewErrUnknownField(exp.name)
+		}
 		s.sb.WriteByte('`')
-		s.sb.WriteString(exp.name)
+		s.sb.WriteString(fd.colName)
 		s.sb.WriteByte('`')
 
 	case value:
@@ -89,7 +108,7 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 		s.sb.WriteString("?")
 
 	default:
-		return fmt.Errorf("orm: 不支持的表达式类型 %v", expr)
+		return errs.NewErrUnsupportedExpression(expr)
 	}
 	return nil
 }

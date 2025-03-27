@@ -57,7 +57,7 @@ func Not(p Predicate) Predicate {
 }
 
 // And
-// 大概用法：C("id").Eq(12).And(C("name").Eq("Tom"))
+// 大概用法：C("id").Eq(12).And(C("name").Eq("Tom").And(xxx))
 func (left Predicate) And(right Predicate) Predicate {
 	return Predicate{
 		left:  left,
