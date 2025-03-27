@@ -12,8 +12,7 @@ type Deleter[T any] struct {
 	model *model
 	sb    strings.Builder
 	args  []any
-
-	db *DB
+	db    *DB
 }
 
 func NewDeleter[T any](db *DB) *Deleter[T] {
