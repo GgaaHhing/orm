@@ -10,7 +10,7 @@ type Selector[T any] struct {
 	table string
 	// 在where下面有各种条件
 	where []Predicate
-	model *model
+	model *Model
 	sb    strings.Builder
 	args  []any
 

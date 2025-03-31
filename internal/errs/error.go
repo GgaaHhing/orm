@@ -17,3 +17,7 @@ func NewErrUnsupportedExpression(expr any) error {
 func NewErrUnknownField(name string) error {
 	return fmt.Errorf("orm：未知的字段名 %s", name)
 }
+
+func NewErrInvalidTagContent(pair string) error {
+	return fmt.Errorf("orm：非法标签 %s", pair)
+}
