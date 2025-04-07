@@ -27,7 +27,7 @@ func (d *Deleter[T]) Build() (*Query, error) {
 	d.sb.WriteString("DELETE FROM ")
 	// 解析model，获取表名
 	var err error
-	d.model, err = d.db.r.get(new(T))
+	d.model, err = d.db.r.Get(new(T))
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (d *Deleter[T]) buildExpression(expr Expression) error {
 	// 如果是一个列名：就构造成 `age` =
 	case Column:
 		d.sb.WriteByte('`')
-		fd, ok := d.model.fields[exp.name]
+		fd, ok := d.model.fieldMap[exp.name]
 		if !ok {
 			return errs.NewErrUnknownField(exp.name)
 		}

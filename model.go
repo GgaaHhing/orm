@@ -28,14 +28,21 @@ type Registry interface {
 
 type Model struct {
 	tableName string
-	fields    map[string]*Field
+	// 字段
+	fieldMap map[string]*Field
+	// 列
+	columnMap map[string]*Field
 }
 
 type ModelOption func(*Model) error
 
 type Field struct {
+	// Go中的名字
+	goName string
 	// 列名
 	colName string
+
+	typ reflect.Type
 }
 
 // registry 元数据注册中心
@@ -62,7 +69,7 @@ func ModelWithTableName(tableName string) ModelOption {
 
 func ModelWithColumnName(field, colName string) ModelOption {
 	return func(r *Model) error {
-		fd, ok := r.fields[field]
+		fd, ok := r.fieldMap[field]
 		if !ok {
 			return errs.NewErrUnknownField(field)
 		}
@@ -104,20 +111,28 @@ func (r *registry) Register(entity any, opts ...ModelOption) (*Model, error) {
 	}
 	typ = typ.Elem()
 	numField := typ.NumField()
-	fields := make(map[string]*Field, numField)
+	fieldMap := make(map[string]*Field, numField)
+	columnMap := make(map[string]*Field, numField)
 	for i := 0; i < numField; i++ {
 		f := typ.Field(i)
+		// pair中包含了结构体中目前字段解析出来的tag
 		pair, err := r.parseTag(f.Tag)
 		if err != nil {
 			return nil, err
 		}
 		colName := pair[tagKeyColumn]
+		// 如果标签为空，我们就帮用户进行处理
 		if colName == "" {
 			colName = underscoreCase(f.Name)
 		}
-		fields[f.Name] = &Field{
+		fd := &Field{
 			colName: colName,
+			goName:  f.Name,
+			typ:     f.Type,
 		}
+		fieldMap[f.Name] = fd
+		// column就是用户自定义的字段名称
+		columnMap[colName] = fd
 	}
 
 	var tableName string
@@ -130,7 +145,8 @@ func (r *registry) Register(entity any, opts ...ModelOption) (*Model, error) {
 
 	res := &Model{
 		tableName: tableName,
-		fields:    fields,
+		fieldMap:  fieldMap,
+		columnMap: columnMap,
 	}
 
 	for _, opt := range opts {

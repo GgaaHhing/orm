@@ -2,6 +2,7 @@ package orm
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"web/orm/internal/errs"
 )
@@ -24,12 +25,13 @@ func NewSelector[T any](db *DB) *Selector[T] {
 	}
 }
 
+// Build 解析字段，构造对应的查询语句
 func (s *Selector[T]) Build() (*Query, error) {
 	s.sb.WriteString("SELECT * FROM ")
 
 	// 解析model
 	var err error
-	s.model, err = s.db.r.get(new(T))
+	s.model, err = s.db.r.Get(new(T))
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +97,7 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 		}
 
 	case Column:
-		fd, ok := s.model.fields[exp.name]
+		fd, ok := s.model.fieldMap[exp.name]
 		if !ok {
 			return errs.NewErrUnknownField(exp.name)
 		}
@@ -131,12 +133,85 @@ func (s *Selector[T]) Where(ps ...Predicate) *Selector[T] {
 	return s
 }
 
+// Get 将对应的查询语句发给数据库并接收返回的查询结果
 func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
-	//TODO implement me
-	panic("implement me")
+	// 构造查询
+	q, err := s.Build()
+	if err != nil {
+		return nil, err
+	}
+
+	db := s.db.db
+	rows, err := db.QueryContext(ctx, q.SQL, q.Args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !rows.Next() {
+		return nil, ErrNoRows
+	}
+	// 如何构造 *T 并返回结果集
+
+	// cs: 取出的列名
+	cs, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	// 因为我们不知道用户会以什么样的顺序进行查询
+	// 所以，我们构造一个any切片来存放对应的列名的类型的顺序
+	vals := make([]any, 0, len(cs))
+
+	// 遍历列名
+	for _, c := range cs {
+		fd, ok := s.model.columnMap[c]
+		if !ok {
+			return nil, errs.NewErrUnknownColumn(c)
+		}
+
+		// vals内存放着正确顺序的字段的零值
+		val := reflect.New(fd.typ)
+		vals = append(vals, val.Interface())
+	}
+	// 将数据库返回的当前行数据读取到传入的参数中
+	//- 参数必须是指针类型，以便 Scan 可以修改它们的值
+	//- 参数顺序必须与 SELECT 语句中的列顺序一致
+	err = rows.Scan(vals...)
+	if err != nil {
+		return nil, err
+	}
+
+	// new返回的是指针
+	tp := new(T)
+	tpValue := reflect.ValueOf(tp)
+	for k, c := range cs {
+		fd, ok := s.model.columnMap[c]
+		if !ok {
+			return nil, errs.NewErrUnknownColumn(c)
+		}
+		// 类似一个赋值操作
+		tpValue.Elem().FieldByName(fd.goName).
+			Set(reflect.ValueOf(vals[k]).Elem())
+	}
+	return tp, nil
 }
 
 func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
-	//TODO implement me
+	q, err := s.Build()
+	if err != nil {
+		return nil, err
+	}
+
+	db := s.db.db
+
+	rows, err := db.QueryContext(ctx, q.SQL, q.Args)
+	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+
+	}
 	panic("implement me")
 }
