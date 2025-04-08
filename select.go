@@ -161,6 +161,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	// 因为我们不知道用户会以什么样的顺序进行查询
 	// 所以，我们构造一个any切片来存放对应的列名的类型的顺序
 	vals := make([]any, 0, len(cs))
+	valElems := make([]reflect.Value, 0, len(cs))
 
 	// 遍历列名
 	for _, c := range cs {
@@ -172,6 +173,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 		// vals内存放着正确顺序的字段的零值
 		val := reflect.New(fd.typ)
 		vals = append(vals, val.Interface())
+		valElems = append(valElems, val.Elem())
 	}
 	// 将数据库返回的当前行数据读取到传入的参数中
 	//- 参数必须是指针类型，以便 Scan 可以修改它们的值
@@ -191,7 +193,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 		}
 		// 类似一个赋值操作
 		tpValue.Elem().FieldByName(fd.goName).
-			Set(reflect.ValueOf(vals[k]).Elem())
+			Set(valElems[k])
 	}
 	return tp, nil
 }
