@@ -12,11 +12,16 @@ var _ Creator = NewUnsafeValue
 
 type UnsafeValue struct {
 	model *model.Model
-	val   any
+	// 基准地址
+	address unsafe.Pointer
 }
 
 func NewUnsafeValue(model *model.Model, val any) Value {
-	return UnsafeValue{model: model, val: val}
+	address := reflect.ValueOf(val).UnsafePointer()
+	return UnsafeValue{
+		model:   model,
+		address: address,
+	}
 }
 
 func (u UnsafeValue) SetColumn(rows *sql.Rows) error {
@@ -27,13 +32,12 @@ func (u UnsafeValue) SetColumn(rows *sql.Rows) error {
 	}
 
 	var vals []any
-	address := reflect.ValueOf(u.val).UnsafePointer()
 	for _, c := range cs {
 		fd, ok := u.model.ColumnMap[c]
 		if !ok {
 			return errs.NewErrUnknownColumn(c)
 		}
-		fdAddr := unsafe.Pointer(uintptr(address) + fd.Offset)
+		fdAddr := unsafe.Pointer(uintptr(u.address) + fd.Offset)
 		// Scan需要指针类型，所以这里不需要加Elem
 		val := reflect.NewAt(fd.Type, fdAddr) // .Elem()
 		vals = append(vals, val.Interface())

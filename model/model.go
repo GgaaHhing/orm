@@ -23,7 +23,7 @@ var (
 // Registry 我们希望可以提供一些拓展性给Model，让用户可以自定义
 type Registry interface {
 	Get(val any) (*Model, error)
-	Register(entity any, opts ...ModelOption) (*Model, error)
+	Register(entity any, opts ...Option) (*Model, error)
 }
 
 type TableName interface {
@@ -38,7 +38,7 @@ type Model struct {
 	ColumnMap map[string]*Field
 }
 
-type ModelOption func(*Model) error
+type Option func(*Model) error
 
 type Field struct {
 	// Go中的名字
@@ -62,7 +62,7 @@ func NewRegistry() Registry {
 	return &registry{}
 }
 
-func ModelWithTableName(tableName string) ModelOption {
+func WithTableName(tableName string) Option {
 	return func(r *Model) error {
 		r.TableName = tableName
 		if tableName == "" {
@@ -72,7 +72,7 @@ func ModelWithTableName(tableName string) ModelOption {
 	}
 }
 
-func ModelWithColumnName(field, colName string) ModelOption {
+func WithColumnName(field, colName string) Option {
 	return func(r *Model) error {
 		fd, ok := r.FieldMap[field]
 		if !ok {
@@ -109,7 +109,7 @@ func (r *registry) Get(val any) (*Model, error) {
 	return m, nil
 }
 
-func (r *registry) Register(entity any, opts ...ModelOption) (*Model, error) {
+func (r *registry) Register(entity any, opts ...Option) (*Model, error) {
 	typ := reflect.TypeOf(entity)
 	if typ.Kind() != reflect.Ptr || typ.Elem().Kind() != reflect.Struct {
 		return nil, errs.ErrPointerOnly
