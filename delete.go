@@ -3,13 +3,14 @@ package orm
 import (
 	"strings"
 	"web/orm/internal/errs"
+	model2 "web/orm/model"
 )
 
 type Deleter[T any] struct {
 	table string
 	// 在where下面有各种条件
 	where []Predicate
-	model *Model
+	model *model2.Model
 	sb    strings.Builder
 	args  []any
 	db    *DB
@@ -38,7 +39,7 @@ func (d *Deleter[T]) Build() (*Query, error) {
 		d.sb.WriteByte('`')
 	} else {
 		d.sb.WriteByte('`')
-		d.sb.WriteString(d.model.tableName)
+		d.sb.WriteString(d.model.TableName)
 		d.sb.WriteByte('`')
 	}
 
@@ -107,11 +108,11 @@ func (d *Deleter[T]) buildExpression(expr Expression) error {
 	// 如果是一个列名：就构造成 `age` =
 	case Column:
 		d.sb.WriteByte('`')
-		fd, ok := d.model.fieldMap[exp.name]
+		fd, ok := d.model.FieldMap[exp.name]
 		if !ok {
 			return errs.NewErrUnknownField(exp.name)
 		}
-		d.sb.WriteString(fd.colName)
+		d.sb.WriteString(fd.ColName)
 		d.sb.WriteByte('`')
 
 	// 如果解析到最后，发现是一个参数，我们就要存储起来

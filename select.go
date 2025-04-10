@@ -2,16 +2,16 @@ package orm
 
 import (
 	"context"
-	"reflect"
 	"strings"
 	"web/orm/internal/errs"
+	"web/orm/model"
 )
 
 type Selector[T any] struct {
 	table string
 	// 在where下面有各种条件
 	where []Predicate
-	model *Model
+	model *model.Model
 	sb    strings.Builder
 	args  []any
 
@@ -44,7 +44,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 		//s.sb.WriteByte('`')
 	} else {
 		s.sb.WriteByte('`')
-		s.sb.WriteString(s.model.tableName)
+		s.sb.WriteString(s.model.TableName)
 		s.sb.WriteByte('`')
 	}
 
@@ -97,12 +97,12 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 		}
 
 	case Column:
-		fd, ok := s.model.fieldMap[exp.name]
+		fd, ok := s.model.FieldMap[exp.name]
 		if !ok {
 			return errs.NewErrUnknownField(exp.name)
 		}
 		s.sb.WriteByte('`')
-		s.sb.WriteString(fd.colName)
+		s.sb.WriteString(fd.ColName)
 		s.sb.WriteByte('`')
 
 	case value:
@@ -150,53 +150,59 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	if !rows.Next() {
 		return nil, ErrNoRows
 	}
-	// 如何构造 *T 并返回结果集
-
-	// cs: 取出的列名
-	cs, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	// 因为我们不知道用户会以什么样的顺序进行查询
-	// 所以，我们构造一个any切片来存放对应的列名的类型的顺序
-	vals := make([]any, 0, len(cs))
-	valElems := make([]reflect.Value, 0, len(cs))
-
-	// 遍历列名
-	for _, c := range cs {
-		fd, ok := s.model.columnMap[c]
-		if !ok {
-			return nil, errs.NewErrUnknownColumn(c)
-		}
-
-		// vals内存放着正确顺序的字段的零值
-		val := reflect.New(fd.typ)
-		vals = append(vals, val.Interface())
-		valElems = append(valElems, val.Elem())
-	}
-	// 将数据库返回的当前行数据读取到传入的参数中
-	//- 参数必须是指针类型，以便 Scan 可以修改它们的值
-	//- 参数顺序必须与 SELECT 语句中的列顺序一致
-	err = rows.Scan(vals...)
-	if err != nil {
-		return nil, err
-	}
-
-	// new返回的是指针
 	tp := new(T)
-	tpValue := reflect.ValueOf(tp)
-	for k, c := range cs {
-		fd, ok := s.model.columnMap[c]
-		if !ok {
-			return nil, errs.NewErrUnknownColumn(c)
-		}
-		// 类似一个赋值操作
-		tpValue.Elem().FieldByName(fd.goName).
-			Set(valElems[k])
-	}
-	return tp, nil
+	val := s.db.creator(s.model, tp)
+	err = val.SetColumn(rows)
+	return tp, err
 }
+
+//func (s *Selector[T]) GetV1(ctx context.Context) (*T, error) {
+//	q, err := s.Build()
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	db := s.db.db
+//	rows, err := db.QueryContext(ctx, q.SQL, q.Args)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	if !rows.Next() {
+//		return nil, ErrNoRows
+//	}
+//	tp := new(T)
+//	//var creator valuer.Creator
+//	//val := creator(tp)
+//	//val.SetColumn(rows)
+//
+//	return tp, err
+//	// cs: 取出的列名
+//	//cs, err := rows.Columns()
+//	//if err != nil {
+//	//	return nil, err
+//	//}
+//	//
+//	//var vals []any
+//	//address := reflect.ValueOf(tp).UnsafePointer()
+//	//for _, c := range cs {
+//	//	fd, ok := s.model.ColumnMap[c]
+//	//	if !ok {
+//	//		return nil, errs.NewErrUnknownColumn(c)
+//	//	}
+//	//	fdAddr := unsafe.Pointer(uintptr(address) + fd.Offset)
+//	//	// Scan需要指针类型，所以这里不需要加Elem
+//	//	val := reflect.NewAt(fd.typ, fdAddr) // .Elem()
+//	//	vals = append(vals, val.Interface())
+//	//}
+//	//
+//	//err = rows.Scan(vals...)
+//	//if err != nil {
+//	//	return nil, err
+//	//}
+//	//
+//	//return tp, nil
+//}
 
 func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 	q, err := s.Build()

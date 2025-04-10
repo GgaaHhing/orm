@@ -1,4 +1,4 @@
-package orm
+package model
 
 import (
 	"errors"
@@ -23,26 +23,33 @@ var (
 // Registry 我们希望可以提供一些拓展性给Model，让用户可以自定义
 type Registry interface {
 	Get(val any) (*Model, error)
-	Register(val any, opts ...ModelOption) (*Model, error)
+	Register(entity any, opts ...ModelOption) (*Model, error)
+}
+
+type TableName interface {
+	TableName() string
 }
 
 type Model struct {
-	tableName string
+	TableName string
 	// 字段
-	fieldMap map[string]*Field
+	FieldMap map[string]*Field
 	// 列
-	columnMap map[string]*Field
+	ColumnMap map[string]*Field
 }
 
 type ModelOption func(*Model) error
 
 type Field struct {
 	// Go中的名字
-	goName string
+	GoName string
 	// 列名
-	colName string
+	ColName string
 
-	typ reflect.Type
+	Type reflect.Type
+
+	// 偏移量
+	Offset uintptr
 }
 
 // registry 元数据注册中心
@@ -51,15 +58,13 @@ type registry struct {
 	models map[reflect.Type]*Model
 }
 
-func NewRegistry() *registry {
-	return &registry{
-		models: make(map[reflect.Type]*Model, 64),
-	}
+func NewRegistry() Registry {
+	return &registry{}
 }
 
 func ModelWithTableName(tableName string) ModelOption {
 	return func(r *Model) error {
-		r.tableName = tableName
+		r.TableName = tableName
 		if tableName == "" {
 			return errors.New("orm: table name is empty")
 		}
@@ -69,11 +74,11 @@ func ModelWithTableName(tableName string) ModelOption {
 
 func ModelWithColumnName(field, colName string) ModelOption {
 	return func(r *Model) error {
-		fd, ok := r.fieldMap[field]
+		fd, ok := r.FieldMap[field]
 		if !ok {
 			return errs.NewErrUnknownField(field)
 		}
-		fd.colName = colName
+		fd.ColName = colName
 		return nil
 	}
 }
@@ -126,9 +131,10 @@ func (r *registry) Register(entity any, opts ...ModelOption) (*Model, error) {
 			colName = underscoreCase(f.Name)
 		}
 		fd := &Field{
-			colName: colName,
-			goName:  f.Name,
-			typ:     f.Type,
+			ColName: colName,
+			GoName:  f.Name,
+			Type:    f.Type,
+			Offset:  f.Offset,
 		}
 		fieldMap[f.Name] = fd
 		// column就是用户自定义的字段名称
@@ -144,9 +150,9 @@ func (r *registry) Register(entity any, opts ...ModelOption) (*Model, error) {
 	}
 
 	res := &Model{
-		tableName: tableName,
-		fieldMap:  fieldMap,
-		columnMap: columnMap,
+		TableName: tableName,
+		FieldMap:  fieldMap,
+		ColumnMap: columnMap,
 	}
 
 	for _, opt := range opts {

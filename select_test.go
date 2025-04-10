@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"web/orm/model"
 )
 
 func TestSelect_Build(t *testing.T) {
 	r := &DB{
-		r: NewRegistry(),
+		r: model.NewRegistry(),
 	}
 	testCase := []struct {
 		name string
