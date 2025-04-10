@@ -2,6 +2,7 @@ package orm
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"web/orm/internal/errs"
 	"web/orm/model"
@@ -212,14 +213,59 @@ func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 
 	db := s.db.db
 
-	rows, err := db.QueryContext(ctx, q.SQL, q.Args)
-	defer rows.Close()
+	rows, err := db.QueryContext(ctx, q.SQL, q.Args...)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
+	// 用来装数据
+	var result []*T
 	for rows.Next() {
+		// 我觉得用户的顺序可能混乱，所以我需要知道用户的查询顺序
+		cs, err := rows.Columns()
+		if err != nil {
+			return nil, err
+		}
 
+		vals := make([]any, 0, len(cs))
+		valsElem := make([]reflect.Value, 0, len(cs))
+
+		for _, c := range cs {
+			// 获取的fd就是我们的字段名
+			fd, ok := s.model.ColumnMap[c]
+			if !ok {
+				return nil, errs.NewErrUnknownField(c)
+			}
+			// 返回一个初始化为具体值的新值
+			val := reflect.New(fd.Type)
+			vals = append(vals, val.Interface())
+			// 当你对通过 reflect.New() 创建的值调用 Elem() 时，它返回指针指向的值
+			valsElem = append(valsElem, val.Elem())
+		}
+		// rows.Scan(vals...) 执行后，valsElem中的这些值会被填充为数据库返回的实际数据。
+		err = rows.Scan(vals...)
+		if err != nil {
+			return nil, err
+		}
+		// id name age
+		// name id age
+		// cs = name, id, age
+		// vals = [name, id, age]
+
+		// 获取了顺序之后，我们就需要将获得的数据写入到指定的结构体里
+		tp := new(T)
+		// 获取用户传入的结构体
+		tpValue := reflect.ValueOf(tp)
+		for k, c := range cs {
+			fd, ok := s.model.ColumnMap[c]
+			if !ok {
+				return nil, errs.NewErrUnknownField(c)
+			}
+
+			tpValue.Elem().FieldByName(fd.GoName).Set(valsElem[k])
+		}
+		result = append(result, tp)
 	}
-	panic("implement me")
+	return result, nil
 }

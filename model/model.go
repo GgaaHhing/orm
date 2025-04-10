@@ -59,7 +59,9 @@ type registry struct {
 }
 
 func NewRegistry() Registry {
-	return &registry{}
+	return &registry{
+		models: make(map[reflect.Type]*Model, 64),
+	}
 }
 
 func WithTableName(tableName string) Option {
