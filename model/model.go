@@ -32,6 +32,8 @@ type TableName interface {
 
 type Model struct {
 	TableName string
+	// 字段切片，为了解决Map的随机性问题
+	Fields []*Field
 	// 字段
 	FieldMap map[string]*Field
 	// 列
@@ -85,6 +87,7 @@ func WithColumnName(field, colName string) Option {
 	}
 }
 
+// Get 通过反射获取元数据
 func (r *registry) Get(val any) (*Model, error) {
 	typ := reflect.TypeOf(val)
 	r.lock.RLock()
@@ -120,6 +123,7 @@ func (r *registry) Register(entity any, opts ...Option) (*Model, error) {
 	numField := typ.NumField()
 	fieldMap := make(map[string]*Field, numField)
 	columnMap := make(map[string]*Field, numField)
+	fields := make([]*Field, 0, numField)
 	for i := 0; i < numField; i++ {
 		f := typ.Field(i)
 		// pair中包含了结构体中目前字段解析出来的tag
@@ -138,6 +142,7 @@ func (r *registry) Register(entity any, opts ...Option) (*Model, error) {
 			Type:    f.Type,
 			Offset:  f.Offset,
 		}
+		fields = append(fields, fd)
 		fieldMap[f.Name] = fd
 		// column就是用户自定义的字段名称
 		columnMap[colName] = fd
@@ -153,6 +158,7 @@ func (r *registry) Register(entity any, opts ...Option) (*Model, error) {
 
 	res := &Model{
 		TableName: tableName,
+		Fields:    fields,
 		FieldMap:  fieldMap,
 		ColumnMap: columnMap,
 	}

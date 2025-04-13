@@ -20,32 +20,11 @@ type Predicate struct {
 
 type op string
 
-type Column struct {
-	name string
-}
-
 func (o op) String() string {
 	return string(o)
 }
 
 func (left Predicate) expr() {}
-
-func (Column) expr() {}
-
-func C(name string) Column {
-	return Column{name: name}
-}
-
-func (c Column) Eq(arg any) Predicate {
-	return Predicate{
-		left: c,
-		op:   opEq,
-		// 这里暂时无法解决对于any和Expression的关联
-		// 所以，直接新建一个struct来关联Expression
-		//right: arg,
-		right: value{val: arg},
-	}
-}
 
 // Not Not后面接的是条件，所以需要传入Predicate
 // 大概用法：Not(C("id).Eq(12))
@@ -79,9 +58,3 @@ type value struct {
 }
 
 func (value) expr() {}
-
-// Expression 标记接口代表表达式
-// 定义了一个共同的抽象，使得不同类型的表达式可以统一处理
-type Expression interface {
-	expr()
-}

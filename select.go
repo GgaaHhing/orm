@@ -2,11 +2,19 @@ package orm
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"web/orm/internal/errs"
 	"web/orm/model"
 )
+
+// Selectable 是一个标记接口
+// 它代表的是查找的列，或者聚合函数等
+// SELECT xxX 部分
+type Selectable interface {
+	selectable()
+}
 
 type Selector[T any] struct {
 	table string
@@ -15,6 +23,9 @@ type Selector[T any] struct {
 	model *model.Model
 	sb    strings.Builder
 	args  []any
+
+	// 分列查询
+	columns []Selectable
 
 	db *DB
 }
@@ -28,10 +39,16 @@ func NewSelector[T any](db *DB) *Selector[T] {
 
 // Build 解析字段，构造对应的查询语句
 func (s *Selector[T]) Build() (*Query, error) {
-	s.sb.WriteString("SELECT * FROM ")
+	var err error
+	s.sb.WriteString("SELECT ")
+	err = s.buildColumns()
+	if err != nil {
+		return nil, err
+	}
+
+	s.sb.WriteString(" FROM ")
 
 	// 解析model
-	var err error
 	s.model, err = s.db.r.Get(new(T))
 	if err != nil {
 		return nil, err
@@ -70,7 +87,9 @@ func (s *Selector[T]) Build() (*Query, error) {
 
 func (s *Selector[T]) buildExpression(expr Expression) error {
 	switch exp := expr.(type) {
+	// 如果是nil就执行就什么都不做
 	case nil:
+	// 如果是Predicate，说明是表达式，用递归不断筛选出合适的进行构造
 	case Predicate:
 		_, ok := exp.left.(Predicate)
 		if ok {
@@ -83,7 +102,9 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 			s.sb.WriteByte(')')
 		}
 
-		s.sb.WriteString(" " + exp.op.String() + " ")
+		if exp.op != "" {
+			s.sb.WriteString(" " + exp.op.String() + " ")
+		}
 
 		// WHERE (`Age` = ?) AND (`name` = ?)
 		_, ok = exp.right.(Predicate)
@@ -98,17 +119,24 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 		}
 
 	case Column:
-		fd, ok := s.model.FieldMap[exp.name]
-		if !ok {
-			return errs.NewErrUnknownField(exp.name)
-		}
-		s.sb.WriteByte('`')
-		s.sb.WriteString(fd.ColName)
-		s.sb.WriteByte('`')
+		// TODO
+		// 忽略别名
+		exp.alias = ""
+		return s.buildColumn(exp)
 
+	// 如果是值，我们就把它添加进s中，然后用占位符表示
+	// 防止SQL注入
 	case value:
 		s.addArg(exp.val)
 		s.sb.WriteString("?")
+
+	case RawExpr:
+		if len(exp.args) > 0 {
+			s.addArg(exp.args...)
+		}
+		s.sb.WriteByte('(')
+		s.sb.WriteString(exp.raw)
+		s.sb.WriteByte(')')
 
 	default:
 		return errs.NewErrUnsupportedExpression(expr)
@@ -116,16 +144,91 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 	return nil
 }
 
-func (s *Selector[T]) addArg(val any) *Selector[T] {
+func (s *Selector[T]) buildColumns() error {
+	if len(s.columns) == 0 {
+		s.sb.WriteByte('*')
+		return nil
+	}
+	for i, col := range s.columns {
+		if i > 0 {
+			s.sb.WriteByte(',')
+		}
+		switch c := col.(type) {
+		case Column:
+			err := s.buildColumn(c)
+			if err != nil {
+				return err
+			}
+
+		case Aggregate:
+			s.sb.WriteString(c.fn)
+			s.sb.WriteByte('(')
+			// TODO
+			err := s.buildColumn(Column{name: c.arg})
+			if err != nil {
+				return err
+			}
+			s.sb.WriteByte(')')
+
+			if c.alias != "" {
+				s.sb.WriteString(" AS `")
+				s.sb.WriteString(c.alias)
+				s.sb.WriteByte('`')
+			}
+
+		case RawExpr:
+			s.sb.WriteString(c.raw)
+			if len(c.args) > 0 {
+				s.addArg(c.args...)
+			}
+
+		default:
+			return errors.New("")
+		}
+	}
+	return nil
+}
+
+// buildColumn 如果是列名，我们就把它构造成 `age` 这样的形式
+func (s *Selector[T]) buildColumn(col Column) error {
+	fd, ok := s.model.FieldMap[col.name]
+	if !ok {
+		return errs.NewErrUnknownField(col.alias)
+	}
+	s.sb.WriteByte('`')
+	s.sb.WriteString(fd.ColName)
+	s.sb.WriteByte('`')
+	if col.alias != "" {
+		s.sb.WriteString(" AS `")
+		s.sb.WriteString(col.alias)
+		s.sb.WriteByte('`')
+	}
+	return nil
+}
+
+// addArg 为Selector添加参数
+func (s *Selector[T]) addArg(val ...any) {
+	if len(val) == 0 {
+		return
+	}
 	if s.args == nil {
 		s.args = make([]any, 0, 4)
 	}
 	s.args = append(s.args, val)
-	return s
 }
 
 func (s *Selector[T]) From(table string) *Selector[T] {
 	s.table = table
+	return s
+}
+
+//func (s *Selector[T]) Select(cols ...string) *Selector[T] {
+//	s.columns = cols
+//	return s
+//}
+
+func (s *Selector[T]) Selectable(cols ...Selectable) *Selector[T] {
+	s.columns = cols
 	return s
 }
 
