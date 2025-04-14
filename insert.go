@@ -1,6 +1,10 @@
 package orm
 
-import "strings"
+import (
+	"reflect"
+	"strings"
+	"web/orm/internal/errs"
+)
 
 type Inserter[T any] struct {
 	// 定义成切片，是为了方便插入同一个结构体的多行列
@@ -22,6 +26,10 @@ func (i *Inserter[T]) Values(vals ...*T) *Inserter[T] {
 }
 
 func (i *Inserter[T]) Build() (*Query, error) {
+	n := len(i.values)
+	if n == 0 {
+		return nil, errs.ErrInsertZeroRow
+	}
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO ")
 
@@ -38,18 +46,39 @@ func (i *Inserter[T]) Build() (*Query, error) {
 
 	// 显式指定列的顺序,不然我们不知道数据库中状认的顺序
 	sb.WriteByte('(')
-	cnt := 0
-	for _, v := range m.FieldMap {
-		if cnt > 0 {
+	for j, v := range m.Fields {
+		if j > 0 {
 			sb.WriteByte(',')
 		}
 		sb.WriteByte('`')
 		sb.WriteString(v.ColName)
 		sb.WriteByte('`')
-		cnt++
 	}
 	sb.WriteByte(')')
+
+	sb.WriteString(" VALUES ")
+	args := make([]any, 0, n*len(m.Fields))
+
+	for j, val := range i.values {
+		if j > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteByte('(')
+		// TODO 支持多列插入 大概要把下面提取成一个函数，然后遍历i.values，然后把sb内置成i的字段
+		for idx, field := range m.Fields {
+			if idx > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteByte('?')
+			// 在拥有字段的标识的时候，优先考虑直接用反射将对应的字段的值获取
+			arg := reflect.ValueOf(val).Elem().FieldByName(field.GoName).Interface()
+			args = append(args, arg)
+		}
+		sb.WriteString(")")
+	}
+	sb.WriteByte(';')
 	return &Query{
-		SQL: sb.String(),
+		SQL:  sb.String(),
+		Args: args,
 	}, nil
 }

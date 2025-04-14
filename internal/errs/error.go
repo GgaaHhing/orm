@@ -6,9 +6,10 @@ import (
 )
 
 var (
-	ErrPointerOnly = errors.New("orm：只支持指向结构体的一级指针")
-	ErrDeleteALL   = errors.New("orm：不允许直接删除整张表")
-	ErrNoRows      = errors.New("orm: 没有数据")
+	ErrPointerOnly   = errors.New("orm：只支持指向结构体的一级指针")
+	ErrDeleteALL     = errors.New("orm：不允许直接删除整张表")
+	ErrInsertZeroRow = errors.New("orm：插入0行")
+	ErrNoRows        = errors.New("orm: 没有数据")
 )
 
 func NewErrUnsupportedExpression(expr any) error {
