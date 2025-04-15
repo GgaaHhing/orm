@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"web/orm/internal/errs"
-	"web/orm/model"
 )
 
 // Selectable 是一个标记接口
@@ -17,12 +15,10 @@ type Selectable interface {
 }
 
 type Selector[T any] struct {
+	builder
 	table string
 	// 在where下面有各种条件
 	where []Predicate
-	model *model.Model
-	sb    strings.Builder
-	args  []any
 
 	// 分列查询
 	columns []Selectable
@@ -33,7 +29,10 @@ type Selector[T any] struct {
 func NewSelector[T any](db *DB) *Selector[T] {
 	return &Selector[T]{
 		db: db,
-		sb: strings.Builder{},
+		builder: builder{
+			dialect: db.dialect,
+			quoter:  db.dialect.quoter(),
+		},
 	}
 }
 
@@ -214,7 +213,7 @@ func (s *Selector[T]) addArg(val ...any) {
 	if s.args == nil {
 		s.args = make([]any, 0, 4)
 	}
-	s.args = append(s.args, val)
+	s.args = append(s.args, val...)
 }
 
 func (s *Selector[T]) From(table string) *Selector[T] {

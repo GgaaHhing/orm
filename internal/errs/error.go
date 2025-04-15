@@ -27,3 +27,7 @@ func NewErrUnknownColumn(name string) error {
 func NewErrInvalidTagContent(pair string) error {
 	return fmt.Errorf("orm：非法标签 %s", pair)
 }
+
+func NewErrUnsupportedAssignable(assign any) error {
+	return fmt.Errorf("orm：不支持的赋值表达式类型 %s", assign)
+}

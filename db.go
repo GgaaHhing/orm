@@ -13,6 +13,7 @@ type DB struct {
 	r       model.Registry
 	db      *sql.DB
 	creator valuer.Creator
+	dialect Dialect
 }
 
 func Open(driverName, dataSourceName string, opts ...DBOption) (*DB, error) {
@@ -28,11 +29,18 @@ func OpenDB(db *sql.DB, opts ...DBOption) (*DB, error) {
 		r:       model.NewRegistry(),
 		db:      db,
 		creator: valuer.NewUnsafeValue,
+		dialect: DialectMySOL,
 	}
 	for _, opt := range opts {
 		opt(res)
 	}
 	return res, nil
+}
+
+func DBWithDialect(dialect Dialect) DBOption {
+	return func(r *DB) {
+		r.dialect = dialect
+	}
 }
 
 func DBUseReflect() DBOption {
