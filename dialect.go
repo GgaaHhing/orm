@@ -15,7 +15,7 @@ type Dialect interface {
 	quoter() byte
 	// 构造OnDuplicateKey
 	// 这里用 *builder是因为builder里面有strings.Builder
-	buildOnDuplicateKey(b *builder, odk *OnDuplicateKey) error
+	buildOnDuplicateKey(b *builder, odk *Upsert) error
 }
 
 type standardSQL struct {
@@ -26,7 +26,7 @@ func (s standardSQL) quoter() byte {
 	panic("implement me")
 }
 
-func (s standardSQL) buildOnDuplicateKey(b *builder, odk *OnDuplicateKey) error {
+func (s standardSQL) buildOnDuplicateKey(b *builder, odk *Upsert) error {
 	//TODO implement me
 	panic("implement me")
 }
@@ -35,39 +35,39 @@ type mysqlDialect struct {
 }
 
 func (m mysqlDialect) quoter() byte {
-    return '`'
+	return '`'
 }
 
-func (m mysqlDialect) buildOnDuplicateKey(b *builder, odk *OnDuplicateKey) error {
-    b.sb.WriteString(" ON DUPLICATE KEY UPDATE ")
-    for idx, assign := range odk.assigns {
-        if idx > 0 {
-            b.sb.WriteByte(',')
-        }
-        switch a := assign.(type) {
-        case Assignment:
-            fd, ok := b.model.FieldMap[a.col]
-            if !ok {
-                return errs.NewErrUnknownField(a.col)
-            }
-            b.quote(fd.ColName)
-            b.sb.WriteString("=?")
-            b.addArgs(a.val)
+func (m mysqlDialect) buildOnDuplicateKey(b *builder, odk *Upsert) error {
+	b.sb.WriteString(" ON DUPLICATE KEY UPDATE ")
+	for idx, assign := range odk.assigns {
+		if idx > 0 {
+			b.sb.WriteByte(',')
+		}
+		switch a := assign.(type) {
+		case Assignment:
+			fd, ok := b.model.FieldMap[a.col]
+			if !ok {
+				return errs.NewErrUnknownField(a.col)
+			}
+			b.quote(fd.ColName)
+			b.sb.WriteString("=?")
+			b.addArgs(a.val)
 
-        case Column:
-            fd, ok := b.model.FieldMap[a.name]
-            if !ok {
-                return errs.NewErrUnknownField(a.name)
-            }
-            b.quote(fd.ColName)
-            b.sb.WriteString("=VALUES(")
-            b.quote(fd.ColName)
-            b.sb.WriteByte(')')
-        default:
-            return errs.NewErrUnsupportedAssignable(assign)
-        }
-    }
-    return nil
+		case Column:
+			fd, ok := b.model.FieldMap[a.name]
+			if !ok {
+				return errs.NewErrUnknownField(a.name)
+			}
+			b.quote(fd.ColName)
+			b.sb.WriteString("=VALUES(")
+			b.quote(fd.ColName)
+			b.sb.WriteByte(')')
+		default:
+			return errs.NewErrUnsupportedAssignable(assign)
+		}
+	}
+	return nil
 }
 
 type SQLiteDialect struct {
@@ -83,7 +83,7 @@ type SQLiteDialect struct {
 //	column2 = value2;
 //
 // 使用 excluded 关键字引用插入的新值（相当于 MySQL 的 VALUES ）
-func (s SQLiteDialect) buildOnDuplicateKey(b *builder, odk *OnDuplicateKey) error {
+func (s SQLiteDialect) buildOnDuplicateKey(b *builder, odk *Upsert) error {
 	b.sb.WriteString("ON CONFLICT (")
 	for i, col := range odk.conflictColumns {
 		if i > 0 {

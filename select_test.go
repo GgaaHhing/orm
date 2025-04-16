@@ -106,6 +106,14 @@ func TestSelector_GetMulti(t *testing.T) {
 	}
 	defer mockDB.Close()
 
+	db := &DB{
+		db:      mockDB,
+		r:       model.NewRegistry(),
+		creator: valuer.NewReflectValue,
+		// 添加 dialect
+		dialect: DialectMySOL,
+	}
+
 	testCases := []struct {
 		name     string
 		query    string
@@ -157,12 +165,6 @@ func TestSelector_GetMulti(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mock.ExpectQuery(tc.query).WillReturnRows(tc.mockRows)
 
-			db := &DB{
-				db:      mockDB,
-				r:       model.NewRegistry(),
-				creator: valuer.NewReflectValue,
-			}
-
 			_, err = db.r.Register(&TestModel{})
 			if err != nil {
 				t.Fatal(err)
@@ -209,4 +211,119 @@ type TestModel struct {
 	FirstName string
 	Age       int8
 	LastName  *sql.NullString
+}
+
+func TestSelector_GroupBy(t *testing.T) {
+	r := &DB{
+		r:       model.NewRegistry(),
+		creator: valuer.NewReflectValue,
+		dialect: DialectMySOL,
+	}
+	testCases := []struct {
+		name      string
+		q         QueryBuilder
+		wantQuery *Query
+		wantErr   error
+	}{
+		{
+			name: "group by single column",
+			q: NewSelector[TestModel](r).
+				Selectable(C("FirstName"), Avg("Age")).
+				GroupBy(C("FirstName")),
+			wantQuery: &Query{
+				SQL: "SELECT `first_name`,AVG(`age`) FROM `test_model` GROUP BY `first_name`;",
+			},
+		},
+		{
+			name: "group by multiple columns",
+			q: NewSelector[TestModel](r).
+				Selectable(C("FirstName"), C("LastName"), Count("Id")).
+				GroupBy(C("FirstName"), C("LastName")),
+			wantQuery: &Query{
+				SQL: "SELECT `first_name`,`last_name`,COUNT(`id`) FROM `test_model` GROUP BY `first_name`,`last_name`;",
+			},
+		},
+		{
+			name: "group by with where",
+			q: NewSelector[TestModel](r).
+				Selectable(C("FirstName"), Avg("Age")).
+				Where(C("Age").Gt(18)).
+				GroupBy(C("FirstName")),
+			wantQuery: &Query{
+				SQL:  "SELECT `first_name`,AVG(`age`) FROM `test_model` WHERE `age` > ? GROUP BY `first_name`;",
+				Args: []any{18},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := tc.q.Build()
+			assert.Equal(t, tc.wantErr, err)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, tc.wantQuery, query)
+		})
+	}
+}
+
+func TestSelector_Having(t *testing.T) {
+	r := &DB{
+		r:       model.NewRegistry(),
+		creator: valuer.NewReflectValue,
+		dialect: DialectMySOL,
+	}
+	testCases := []struct {
+		name      string
+		q         QueryBuilder
+		wantQuery *Query
+		wantErr   error
+	}{
+		{
+			name: "having with aggregate",
+			q: NewSelector[TestModel](r).
+				Selectable(C("FirstName"), Count("Id")).
+				GroupBy(C("FirstName")).
+				Having(Count("Id").Gt(10)),
+			wantQuery: &Query{
+				SQL:  "SELECT `first_name`,COUNT(`id`) FROM `test_model` GROUP BY `first_name` HAVING COUNT(`id`) > ?;",
+				Args: []any{10},
+			},
+		},
+		{
+			name: "having with multiple conditions",
+			q: NewSelector[TestModel](r).
+				Selectable(C("FirstName").As("f"), Count("Id"), Avg("Age")).
+				GroupBy(C("FirstName")).
+				Having(Count("Id").Gt(10).And(Avg("Age").Gt(18))),
+			wantQuery: &Query{
+				SQL:  "SELECT `first_name` AS `f`,COUNT(`id`),AVG(`age`) FROM `test_model` GROUP BY `first_name` HAVING (COUNT(`id`) > ?) AND (AVG(`age`) > ?);",
+				Args: []any{10, 18},
+			},
+		},
+		{
+			name: "having with where",
+			q: NewSelector[TestModel](r).
+				Selectable(C("FirstName"), Count("Id"), Avg("Age")).
+				Where(C("Age").Gt(15)).
+				GroupBy(C("FirstName")).
+				Having(Count("Id").Gt(10).And(Avg("Age").Gt(18))),
+			wantQuery: &Query{
+				SQL:  "SELECT `first_name`,COUNT(`id`),AVG(`age`) FROM `test_model` WHERE `age` > ? GROUP BY `first_name` HAVING (COUNT(`id`) > ?) AND (AVG(`age`) > ?);",
+				Args: []any{15, 10, 18},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := tc.q.Build()
+			assert.Equal(t, tc.wantErr, err)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, tc.wantQuery, query)
+		})
+	}
 }

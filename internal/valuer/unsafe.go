@@ -24,6 +24,17 @@ func NewUnsafeValue(model *model.Model, val any) Value {
 	}
 }
 
+func (u UnsafeValue) Field(name string) (any, error) {
+	fd, ok := u.model.FieldMap[name]
+	if !ok {
+		return nil, errs.NewErrUnknownField(name)
+	}
+	// 获取偏移量
+	fdAddress := unsafe.Pointer(uintptr(u.address) + fd.Offset)
+	val := reflect.NewAt(fd.Type, fdAddress)
+	return val.Elem().Interface(), nil
+}
+
 func (u UnsafeValue) SetColumn(rows *sql.Rows) error {
 	//cs: 取出的列名
 	cs, err := rows.Columns()

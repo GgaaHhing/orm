@@ -1,38 +1,38 @@
 package orm
 
 import (
-	"reflect"
+	"context"
 	"strings"
 	"web/orm/internal/errs"
 	"web/orm/model"
 )
 
-type OnDuplicateKeyBuilder[T any] struct {
+type UpsertBuilder[T any] struct {
 	i               *Inserter[T]
 	conflictColumns []string
 }
 
-type OnDuplicateKey struct {
+type Upsert struct {
 	assigns         []Assignable
 	conflictColumns []string
 }
 
 // ConflictColumns 这是一个中间方法，冲突列名
-func (o *OnDuplicateKeyBuilder[T]) ConflictColumns(cols ...string) *OnDuplicateKeyBuilder[T] {
+func (o *UpsertBuilder[T]) ConflictColumns(cols ...string) *UpsertBuilder[T] {
 	o.conflictColumns = cols
 	return o
 }
 
 // Update
 // 大概用起来是这样：
-// db.Insert(&user).OnDuplicateKey().Update(
+// db.Insert(&user).Upsert().Update(
 //
 //	Assign("age", 18),        // 直接赋值
 //	C("name"),                // 使用 VALUES(name)
 //
 // )
-func (o *OnDuplicateKeyBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
-	o.i.onDuplicateKey = &OnDuplicateKey{
+func (o *UpsertBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
+	o.i.onDuplicateKey = &Upsert{
 		assigns:         assigns,
 		conflictColumns: o.conflictColumns,
 	}
@@ -54,7 +54,7 @@ type Inserter[T any] struct {
 	columns []string
 	builder
 
-	onDuplicateKey *OnDuplicateKey
+	onDuplicateKey *Upsert
 }
 
 func NewInserter[T any](db *DB) *Inserter[T] {
@@ -68,8 +68,8 @@ func NewInserter[T any](db *DB) *Inserter[T] {
 	}
 }
 
-func (i *Inserter[T]) OnDuplicateKey(assigns ...Assignable) *OnDuplicateKeyBuilder[T] {
-	return &OnDuplicateKeyBuilder[T]{
+func (i *Inserter[T]) OnDuplicateKey() *UpsertBuilder[T] {
+	return &UpsertBuilder[T]{
 		i: i,
 	}
 }
@@ -134,11 +134,12 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	i.sb.WriteString(" VALUES ")
 	args := make([]any, 0, n*len(m.Fields))
 
-	for j, val := range i.values {
+	for j, v := range i.values {
 		if j > 0 {
 			i.sb.WriteByte(',')
 		}
 		i.sb.WriteByte('(')
+		val := i.db.creator(i.model, v)
 		// TODO 支持多列插入 大概要把下面提取成一个函数，然后遍历i.values，然后把sb内置成i的字段
 		for idx, field := range fields {
 			if idx > 0 {
@@ -146,8 +147,12 @@ func (i *Inserter[T]) Build() (*Query, error) {
 			}
 			i.sb.WriteByte('?')
 			// 在拥有字段的标识的时候，优先考虑直接用反射将对应的字段的值获取
-			arg := reflect.ValueOf(val).Elem().FieldByName(field.GoName).Interface()
-			args = append(args, arg)
+			arg, err := val.Field(field.GoName)
+			if err != nil {
+				return nil, err
+			}
+			i.addArgs(arg)
+			// 1. 创建value的零值在args里，2.通过unsafe计算偏移量
 		}
 		i.sb.WriteString(")")
 	}
@@ -163,6 +168,21 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	i.sb.WriteByte(';')
 	return &Query{
 		SQL:  i.sb.String(),
-		Args: args,
+		Args: i.args,
 	}, nil
+}
+
+// Exec 执行
+func (i *Inserter[T]) Exec(ctx context.Context) Result {
+	q, err := i.Build()
+	if err != nil {
+		return Result{
+			err: err,
+		}
+	}
+	res, err := i.db.db.Exec(q.SQL, q.Args...)
+	return Result{
+		res: res,
+		err: err,
+	}
 }

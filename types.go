@@ -2,7 +2,6 @@ package orm
 
 import (
 	"context"
-	"database/sql"
 )
 
 // Querier 用于查询
@@ -12,9 +11,9 @@ type Querier[T any] interface {
 	GetMulti(ctx context.Context) ([]*T, error)
 }
 
-// Executor 用于增删改
+// Executor 用于增删改的注册，也就是和数据库的交互
 type Executor interface {
-	Exec(ctx context.Context) (sql.Result, error)
+	Exec(ctx context.Context) Result
 }
 
 type QueryBuilder interface {

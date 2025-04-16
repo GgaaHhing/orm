@@ -28,6 +28,14 @@ func (c Column) Eq(arg any) Predicate {
 	}
 }
 
+func (c Column) Gt(arg any) Predicate {
+	return Predicate{
+		left:  c,
+		op:    opGt,
+		right: valueOf(arg),
+	}
+}
+
 func valueOf(arg any) Expression {
 	switch v := arg.(type) {
 	case Expression:

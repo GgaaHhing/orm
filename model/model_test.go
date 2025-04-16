@@ -29,7 +29,7 @@ func TestUnderscoreCase(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := underscoreCase(tc.input)
+			result := UnderscoreCase(tc.input)
 			assert.Equal(t, tc.expected, result)
 		})
 	}

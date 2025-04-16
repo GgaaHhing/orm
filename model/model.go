@@ -134,7 +134,7 @@ func (r *registry) Register(entity any, opts ...Option) (*Model, error) {
 		colName := pair[tagKeyColumn]
 		// 如果标签为空，我们就帮用户进行处理
 		if colName == "" {
-			colName = underscoreCase(f.Name)
+			colName = UnderscoreCase(f.Name)
 		}
 		fd := &Field{
 			ColName: colName,
@@ -153,7 +153,7 @@ func (r *registry) Register(entity any, opts ...Option) (*Model, error) {
 		tableName = tbl.TableName()
 	}
 	if tableName == "" {
-		tableName = underscoreCase(typ.Name())
+		tableName = UnderscoreCase(typ.Name())
 	}
 
 	res := &Model{
@@ -190,8 +190,8 @@ func (r *registry) parseTag(tag reflect.StructTag) (map[string]string, error) {
 	return res, nil
 }
 
-// underscoreCase 将驼峰命名转换为下划线分隔的小写形式
-func underscoreCase(s string) string {
+// UnderscoreCase 将驼峰命名转换为下划线分隔的小写形式
+func UnderscoreCase(s string) string {
 	// 应用正则转换
 	snake := matchFirstCap.ReplaceAllString(s, "${1}_${2}")
 	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")

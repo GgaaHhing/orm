@@ -73,7 +73,7 @@ func TestInserter_Build(t *testing.T) {
 			wantErr: errs.ErrInsertZeroRow,
 		},
 		{
-			// 使用 OnDuplicateKey
+			// 使用 Upsert
 			name: "on duplicate key",
 			q: NewInserter[TestModel](db).Values(&TestModel{
 				Id:        1,
@@ -86,7 +86,7 @@ func TestInserter_Build(t *testing.T) {
 			},
 		},
 		{
-			// 使用 OnDuplicateKey 和 Columns
+			// 使用 Upsert 和 Columns
 			name: "on duplicate key with columns",
 			q: NewInserter[TestModel](db).Values(&TestModel{
 				Id:        1,

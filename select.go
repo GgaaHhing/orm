@@ -23,8 +23,9 @@ type Selector[T any] struct {
 
 	// 分列查询
 	columns []Selectable
-
-	db *DB
+	groupBy []Column    // 添加 groupBy 字段
+	having  []Predicate // 添加 having 字段
+	db      *DB
 }
 
 func NewSelector[T any](db *DB) *Selector[T] {
@@ -32,7 +33,6 @@ func NewSelector[T any](db *DB) *Selector[T] {
 		db: db,
 		builder: builder{
 			dialect: db.dialect,
-			sb:      strings.Builder{},
 			quoter:  db.dialect.quoter(),
 		},
 	}
@@ -41,6 +41,13 @@ func NewSelector[T any](db *DB) *Selector[T] {
 // Build 解析字段，构造对应的查询语句
 func (s *Selector[T]) Build() (*Query, error) {
 	var err error
+
+	// 解析model
+	s.model, err = s.db.r.Get(new(T))
+	if err != nil {
+		return nil, err
+	}
+
 	s.sb.WriteString("SELECT ")
 	err = s.buildColumns()
 	if err != nil {
@@ -48,12 +55,6 @@ func (s *Selector[T]) Build() (*Query, error) {
 	}
 
 	s.sb.WriteString(" FROM ")
-
-	// 解析model
-	s.model, err = s.db.r.Get(new(T))
-	if err != nil {
-		return nil, err
-	}
 
 	if s.table != "" {
 		// 防止用户传一些嵌套表名之类的
@@ -74,6 +75,33 @@ func (s *Selector[T]) Build() (*Query, error) {
 		for i := 1; i < len(s.where); i++ {
 			p = p.And(s.where[i])
 		}
+		if err = s.buildExpression(p); err != nil {
+			return nil, err
+		}
+	}
+
+	// WHERE 子句之后 Group By
+	if len(s.groupBy) > 0 {
+		s.sb.WriteString(" GROUP BY ")
+		for i, c := range s.groupBy {
+			if i > 0 {
+				s.sb.WriteByte(',')
+			}
+			if err = s.buildColumn(c); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// GROUP BY 之后添加 HAVING
+	if len(s.having) > 0 {
+		s.sb.WriteString(" HAVING ")
+		p := s.having[0]
+		for i := 1; i < len(s.having); i++ {
+			p = p.And(s.having[i])
+		}
+		// HAVING COUNT(`age`) > ?
+		// Aggregate opGt value
 		if err = s.buildExpression(p); err != nil {
 			return nil, err
 		}
@@ -135,14 +163,31 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 		if len(exp.args) > 0 {
 			s.addArgs(exp.args...)
 		}
-		s.sb.WriteByte('(')
-		s.sb.WriteString(exp.raw)
-		s.sb.WriteByte(')')
+		// 检查是否是聚合函数表达式
+		if isAggregateExpr(exp.raw) {
+			s.sb.WriteString(exp.raw)
+		} else {
+			// 用户自定义的 RawExpr，添加括号保证优先级
+			s.sb.WriteByte('(')
+			s.sb.WriteString(exp.raw)
+			s.sb.WriteByte(')')
+		}
 
 	default:
 		return errs.NewErrUnsupportedExpression(expr)
 	}
 	return nil
+}
+
+// 判断是否是聚合函数表达式
+func isAggregateExpr(expr string) bool {
+	aggregateFuncs := []string{"COUNT", "SUM", "AVG", "MAX", "MIN"}
+	for _, fn := range aggregateFuncs {
+		if strings.HasPrefix(expr, fn) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Selector[T]) buildColumns() error {
@@ -262,54 +307,6 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	return tp, err
 }
 
-//func (s *Selector[T]) GetV1(ctx context.Context) (*T, error) {
-//	q, err := s.Build()
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	db := s.db.db
-//	rows, err := db.QueryContext(ctx, q.SQL, q.Args)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	if !rows.Next() {
-//		return nil, ErrNoRows
-//	}
-//	tp := new(T)
-//	//var creator valuer.Creator
-//	//val := creator(tp)
-//	//val.SetColumn(rows)
-//
-//	return tp, err
-//	// cs: 取出的列名
-//	//cs, err := rows.Columns()
-//	//if err != nil {
-//	//	return nil, err
-//	//}
-//	//
-//	//var vals []any
-//	//address := reflect.ValueOf(tp).UnsafePointer()
-//	//for _, c := range cs {
-//	//	fd, ok := s.model.ColumnMap[c]
-//	//	if !ok {
-//	//		return nil, errs.NewErrUnknownColumn(c)
-//	//	}
-//	//	fdAddr := unsafe.Pointer(uintptr(address) + fd.Offset)
-//	//	// Scan需要指针类型，所以这里不需要加Elem
-//	//	val := reflect.NewAt(fd.typ, fdAddr) // .Elem()
-//	//	vals = append(vals, val.Interface())
-//	//}
-//	//
-//	//err = rows.Scan(vals...)
-//	//if err != nil {
-//	//	return nil, err
-//	//}
-//	//
-//	//return tp, nil
-//}
-
 func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 	q, err := s.Build()
 	if err != nil {
@@ -373,4 +370,16 @@ func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 		result = append(result, tp)
 	}
 	return result, nil
+}
+
+// GroupBy 设置 GROUP BY 子句
+func (s *Selector[T]) GroupBy(cols ...Column) *Selector[T] {
+	s.groupBy = cols
+	return s
+}
+
+// Having 设置 HAVING 子句
+func (s *Selector[T]) Having(ps ...Predicate) *Selector[T] {
+	s.having = ps
+	return s
 }

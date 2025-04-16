@@ -12,11 +12,15 @@ var _ Creator = NewReflectValue
 type reflectValue struct {
 	model *model.Model
 	// 对应T的指针
-	val any
+	val reflect.Value
 }
 
 func NewReflectValue(model *model.Model, val any) Value {
-	return reflectValue{model: model, val: val}
+	return reflectValue{model: model, val: reflect.ValueOf(val).Elem()}
+}
+
+func (r reflectValue) Field(name string) (any, error) {
+	return r.val.FieldByName(name).Interface(), nil
 }
 
 func (r reflectValue) SetColumn(rows *sql.Rows) error {
