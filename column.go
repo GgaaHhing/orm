@@ -9,6 +9,7 @@ func C(name string) Column {
 	return Column{name: name}
 }
 
+// Column ：用于 VALUES 语法，如 col = VALUES(col)
 func (c Column) assign() {}
 
 func (c Column) As(alias string) Column {

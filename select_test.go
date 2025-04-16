@@ -12,7 +12,9 @@ import (
 
 func TestSelect_Build(t *testing.T) {
 	r := &DB{
-		r: model.NewRegistry(),
+		r:       model.NewRegistry(),
+		dialect: DialectMySOL,
+		creator: valuer.NewReflectValue,
 	}
 	testCase := []struct {
 		name string

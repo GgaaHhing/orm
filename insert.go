@@ -8,20 +8,39 @@ import (
 )
 
 type OnDuplicateKeyBuilder[T any] struct {
-	i *Inserter[T]
+	i               *Inserter[T]
+	conflictColumns []string
 }
 
 type OnDuplicateKey struct {
-	assigns []Assignable
+	assigns         []Assignable
+	conflictColumns []string
 }
 
+// ConflictColumns 这是一个中间方法，冲突列名
+func (o *OnDuplicateKeyBuilder[T]) ConflictColumns(cols ...string) *OnDuplicateKeyBuilder[T] {
+	o.conflictColumns = cols
+	return o
+}
+
+// Update
+// 大概用起来是这样：
+// db.Insert(&user).OnDuplicateKey().Update(
+//
+//	Assign("age", 18),        // 直接赋值
+//	C("name"),                // 使用 VALUES(name)
+//
+// )
 func (o *OnDuplicateKeyBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
 	o.i.onDuplicateKey = &OnDuplicateKey{
-		assigns: assigns,
+		assigns:         assigns,
+		conflictColumns: o.conflictColumns,
 	}
 	return o.i
 }
 
+// Assignable 是一个用于处理赋值操作的接口，
+// 主要用在 Upsert（INSERT ... ON DUPLICATE KEY UPDATE）场景中
 type Assignable interface {
 	assign()
 }
@@ -105,9 +124,10 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		if j > 0 {
 			i.sb.WriteByte(',')
 		}
-		i.sb.WriteByte('`')
-		i.sb.WriteString(v.ColName)
-		i.sb.WriteByte('`')
+		//i.sb.WriteByte('`')
+		//i.sb.WriteString(v.ColName)
+		//i.sb.WriteByte('`')
+		i.quote(v.ColName)
 	}
 	i.sb.WriteByte(')')
 
@@ -133,11 +153,11 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	}
 
 	if i.onDuplicateKey != nil {
-		// TODO buildOnDuplicateKey
 		err = i.dialect.buildOnDuplicateKey(&i.builder, i.onDuplicateKey)
 		if err != nil {
 			return nil, err
 		}
+		args = append(args, i.args...)
 	}
 
 	i.sb.WriteByte(';')

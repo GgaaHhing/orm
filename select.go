@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"web/orm/internal/errs"
 )
 
@@ -31,6 +32,7 @@ func NewSelector[T any](db *DB) *Selector[T] {
 		db: db,
 		builder: builder{
 			dialect: db.dialect,
+			sb:      strings.Builder{},
 			quoter:  db.dialect.quoter(),
 		},
 	}
@@ -126,12 +128,12 @@ func (s *Selector[T]) buildExpression(expr Expression) error {
 	// 如果是值，我们就把它添加进s中，然后用占位符表示
 	// 防止SQL注入
 	case value:
-		s.addArg(exp.val)
+		s.addArgs(exp.val)
 		s.sb.WriteString("?")
 
 	case RawExpr:
 		if len(exp.args) > 0 {
-			s.addArg(exp.args...)
+			s.addArgs(exp.args...)
 		}
 		s.sb.WriteByte('(')
 		s.sb.WriteString(exp.raw)
@@ -178,7 +180,7 @@ func (s *Selector[T]) buildColumns() error {
 		case RawExpr:
 			s.sb.WriteString(c.raw)
 			if len(c.args) > 0 {
-				s.addArg(c.args...)
+				s.addArgs(c.args...)
 			}
 
 		default:
@@ -194,6 +196,7 @@ func (s *Selector[T]) buildColumn(col Column) error {
 	if !ok {
 		return errs.NewErrUnknownField(col.alias)
 	}
+	//s.quote(fd.ColName)
 	s.sb.WriteByte('`')
 	s.sb.WriteString(fd.ColName)
 	s.sb.WriteByte('`')
@@ -205,16 +208,16 @@ func (s *Selector[T]) buildColumn(col Column) error {
 	return nil
 }
 
-// addArg 为Selector添加参数
-func (s *Selector[T]) addArg(val ...any) {
-	if len(val) == 0 {
-		return
-	}
-	if s.args == nil {
-		s.args = make([]any, 0, 4)
-	}
-	s.args = append(s.args, val...)
-}
+//// addArg 为Selector添加参数
+//func (s *Selector[T]) addArg(val ...any) {
+//	if len(val) == 0 {
+//		return
+//	}
+//	if s.args == nil {
+//		s.args = make([]any, 0, 4)
+//	}
+//	s.args = append(s.args, val...)
+//}
 
 func (s *Selector[T]) From(table string) *Selector[T] {
 	s.table = table
