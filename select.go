@@ -25,16 +25,20 @@ type Selector[T any] struct {
 	columns []Selectable
 	groupBy []Column    // 添加 groupBy 字段
 	having  []Predicate // 添加 having 字段
-	db      *DB
+
+	core
+	sess Session
 }
 
-func NewSelector[T any](db *DB) *Selector[T] {
+func NewSelector[T any](sess Session) *Selector[T] {
+	c := sess.getCore()
 	return &Selector[T]{
-		db: db,
+		sess: sess,
 		builder: builder{
-			dialect: db.dialect,
-			quoter:  db.dialect.quoter(),
+			core:   c,
+			quoter: c.dialect.quoter(),
 		},
+		core: c,
 	}
 }
 
@@ -43,7 +47,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 	var err error
 
 	// 解析model
-	s.model, err = s.db.r.Get(new(T))
+	s.model, err = s.r.Get(new(T))
 	if err != nil {
 		return nil, err
 	}
@@ -253,26 +257,10 @@ func (s *Selector[T]) buildColumn(col Column) error {
 	return nil
 }
 
-//// addArg 为Selector添加参数
-//func (s *Selector[T]) addArg(val ...any) {
-//	if len(val) == 0 {
-//		return
-//	}
-//	if s.args == nil {
-//		s.args = make([]any, 0, 4)
-//	}
-//	s.args = append(s.args, val...)
-//}
-
 func (s *Selector[T]) From(table string) *Selector[T] {
 	s.table = table
 	return s
 }
-
-//func (s *Selector[T]) Select(cols ...string) *Selector[T] {
-//	s.columns = cols
-//	return s
-//}
 
 func (s *Selector[T]) Selectable(cols ...Selectable) *Selector[T] {
 	s.columns = cols
@@ -292,8 +280,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 		return nil, err
 	}
 
-	db := s.db.db
-	rows, err := db.QueryContext(ctx, q.SQL, q.Args)
+	rows, err := s.sess.queryContext(ctx, q.SQL, q.Args)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +289,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 		return nil, ErrNoRows
 	}
 	tp := new(T)
-	val := s.db.creator(s.model, tp)
+	val := s.creator(s.model, tp)
 	err = val.SetColumn(rows)
 	return tp, err
 }
@@ -313,9 +300,7 @@ func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 		return nil, err
 	}
 
-	db := s.db.db
-
-	rows, err := db.QueryContext(ctx, q.SQL, q.Args...)
+	rows, err := s.sess.queryContext(ctx, q.SQL, q.Args...)
 	if err != nil {
 		return nil, err
 	}

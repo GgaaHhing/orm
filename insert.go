@@ -49,22 +49,23 @@ type Inserter[T any] struct {
 	// 定义成切片，是为了方便插入同一个结构体的多行列
 	values []*T
 	// 维持住DB是为了通过DB拿到一些信息
-	db *DB
+	//db *DB
 	//
 	columns []string
 	builder
-
+	sess           Session
 	onDuplicateKey *Upsert
 }
 
-func NewInserter[T any](db *DB) *Inserter[T] {
+func NewInserter[T any](sess Session) *Inserter[T] {
+	c := sess.getCore()
 	return &Inserter[T]{
-		db: db,
 		builder: builder{
-			dialect: db.dialect,
-			quoter:  db.dialect.quoter(),
-			sb:      strings.Builder{},
+			core:   c,
+			quoter: c.dialect.quoter(),
+			sb:     strings.Builder{},
 		},
+		sess: sess,
 	}
 }
 
@@ -94,7 +95,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	i.sb.WriteString("INSERT INTO ")
 
 	// 拿到元数据
-	m, err := i.db.r.Get(i.values[0])
+	m, err := i.r.Get(i.values[0])
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 			i.sb.WriteByte(',')
 		}
 		i.sb.WriteByte('(')
-		val := i.db.creator(i.model, v)
+		val := i.creator(i.model, v)
 		// TODO 支持多列插入 大概要把下面提取成一个函数，然后遍历i.values，然后把sb内置成i的字段
 		for idx, field := range fields {
 			if idx > 0 {
@@ -180,7 +181,7 @@ func (i *Inserter[T]) Exec(ctx context.Context) Result {
 			err: err,
 		}
 	}
-	res, err := i.db.db.Exec(q.SQL, q.Args...)
+	res, err := i.sess.execContext(ctx, q.SQL, q.Args...)
 	return Result{
 		res: res,
 		err: err,

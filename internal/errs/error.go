@@ -31,3 +31,7 @@ func NewErrInvalidTagContent(pair string) error {
 func NewErrUnsupportedAssignable(assign any) error {
 	return fmt.Errorf("orm：不支持的赋值表达式类型 %s", assign)
 }
+
+func NewErrFailedToRollbackTx(bizErr error, rbErr error, panicked bool) error {
+	return fmt.Errorf("orm: 事务闭包回滚失败，业务错误：%w, 回滚错误：%w，是否panic：%v", bizErr, rbErr, panicked)
+}

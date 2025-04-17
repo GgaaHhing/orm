@@ -3,14 +3,14 @@ package orm
 import (
 	"strings"
 	"web/orm/internal/errs"
-	model2 "web/orm/model"
+	"web/orm/model"
 )
 
 type Deleter[T any] struct {
 	table string
 	// 在where下面有各种条件
 	where []Predicate
-	model *model2.Model
+	model *model.Model
 	sb    strings.Builder
 	args  []any
 	db    *DB

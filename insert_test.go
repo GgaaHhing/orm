@@ -11,9 +11,12 @@ import (
 
 func TestInserter_Build(t *testing.T) {
 	db := &DB{
-		r:       model.NewRegistry(),
-		dialect: DialectMySOL,
-		creator: valuer.NewReflectValue,
+		core: core{
+			r:       model.NewRegistry(),
+			dialect: DialectMySOL,
+			creator: valuer.NewReflectValue,
+			model:   &model.Model{},
+		},
 	}
 	testCases := []struct {
 		name      string

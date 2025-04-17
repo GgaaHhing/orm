@@ -4,12 +4,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"web/orm/internal/errs"
+	"web/orm/internal/valuer"
 	"web/orm/model"
 )
 
 func TestDeleter_Build(t *testing.T) {
 	r := &DB{
-		r: model.NewRegistry(),
+		core: core{
+			r:       model.NewRegistry(),
+			creator: valuer.NewReflectValue,
+			dialect: DialectMySOL,
+			model:   &model.Model{},
+		},
 	}
 	testCase := []struct {
 		name    string

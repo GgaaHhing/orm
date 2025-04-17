@@ -3,18 +3,15 @@ package orm
 import (
 	"strings"
 	"web/orm/internal/errs"
-	"web/orm/model"
 )
 
 // builder 用于构造不同抽象之间的公共部分的builder
 // 例如 `col`这样的构造，model的流通，等等......
 type builder struct {
-	sb    strings.Builder
-	args  []any
-	model *model.Model
-
-	dialect Dialect
-	quoter  byte
+	sb   strings.Builder
+	args []any
+	core
+	quoter byte
 }
 
 // quote 构造列名 `col`

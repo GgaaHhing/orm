@@ -12,9 +12,11 @@ import (
 
 func TestSelect_Build(t *testing.T) {
 	r := &DB{
-		r:       model.NewRegistry(),
-		dialect: DialectMySOL,
-		creator: valuer.NewReflectValue,
+		core: core{
+			r:       model.NewRegistry(),
+			dialect: DialectMySOL,
+			creator: valuer.NewReflectValue,
+		},
 	}
 	testCase := []struct {
 		name string
@@ -26,59 +28,47 @@ func TestSelect_Build(t *testing.T) {
 		{
 			name: "select no from",
 			//
-			builder: &Selector[TestModel]{
-				db: r,
-			},
+			builder: NewSelector[TestModel](r),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model`;",
 				Args: nil,
 			},
 		},
 		{
-			name: "select from",
-			builder: (&Selector[TestModel]{
-				db: r,
-			}).From("`TestModel`"),
+			name:    "select from",
+			builder: NewSelector[TestModel](r).From("`TestModel`"),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `TestModel`;",
 				Args: nil,
 			},
 		},
 		{
-			name: "empty from",
-			builder: (&Selector[TestModel]{
-				db: r,
-			}).From(""),
+			name:    "empty from",
+			builder: NewSelector[TestModel](r).From(""),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model`;",
 				Args: nil,
 			},
 		},
 		{
-			name: "where",
-			builder: (&Selector[TestModel]{
-				db: r,
-			}).Where(C("Age").Eq(12)),
+			name:    "where",
+			builder: NewSelector[TestModel](r).Where(C("Age").Eq(12)),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE `age` = ?;",
 				Args: []any{12},
 			},
 		},
 		{
-			name: "long where",
-			builder: (&Selector[TestModel]{
-				db: r,
-			}).Where(C("Age").Eq(12).And(C("FirstName").Eq("John"))),
+			name:    "long where",
+			builder: NewSelector[TestModel](r).Where(C("Age").Eq(12).And(C("FirstName").Eq("John"))),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE (`age` = ?) AND (`first_name` = ?);",
 				Args: []any{12, "John"},
 			},
 		},
 		{
-			name: "Not",
-			builder: (&Selector[TestModel]{
-				db: r,
-			}).Where(Not(C("Age").Eq(12))),
+			name:    "Not",
+			builder: NewSelector[TestModel](r).Where(Not(C("Age").Eq(12))),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE  NOT (`age` = ?);",
 				Args: []any{12},
@@ -107,11 +97,12 @@ func TestSelector_GetMulti(t *testing.T) {
 	defer mockDB.Close()
 
 	db := &DB{
-		db:      mockDB,
-		r:       model.NewRegistry(),
-		creator: valuer.NewReflectValue,
-		// 添加 dialect
-		dialect: DialectMySOL,
+		db: mockDB,
+		core: core{
+			r:       model.NewRegistry(),
+			dialect: DialectMySOL,
+			creator: valuer.NewReflectValue,
+		},
 	}
 
 	testCases := []struct {
@@ -215,9 +206,11 @@ type TestModel struct {
 
 func TestSelector_GroupBy(t *testing.T) {
 	r := &DB{
-		r:       model.NewRegistry(),
-		creator: valuer.NewReflectValue,
-		dialect: DialectMySOL,
+		core: core{
+			r:       model.NewRegistry(),
+			dialect: DialectMySOL,
+			creator: valuer.NewReflectValue,
+		},
 	}
 	testCases := []struct {
 		name      string
@@ -270,9 +263,11 @@ func TestSelector_GroupBy(t *testing.T) {
 
 func TestSelector_Having(t *testing.T) {
 	r := &DB{
-		r:       model.NewRegistry(),
-		creator: valuer.NewReflectValue,
-		dialect: DialectMySOL,
+		core: core{
+			r:       model.NewRegistry(),
+			dialect: DialectMySOL,
+			creator: valuer.NewReflectValue,
+		},
 	}
 	testCases := []struct {
 		name      string
