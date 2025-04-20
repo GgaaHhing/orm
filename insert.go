@@ -2,6 +2,7 @@ package orm
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"web/orm/internal/errs"
 	"web/orm/model"
@@ -44,6 +45,8 @@ func (o *UpsertBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
 type Assignable interface {
 	assign()
 }
+
+var _ Handler = (&Inserter[any]{}).execHandler
 
 type Inserter[T any] struct {
 	// 定义成切片，是为了方便插入同一个结构体的多行列
@@ -95,22 +98,24 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	i.sb.WriteString("INSERT INTO ")
 
 	// 拿到元数据
-	m, err := i.r.Get(i.values[0])
-	if err != nil {
-		return nil, err
+	if i.model == nil {
+		m, err := i.r.Get(i.values[0])
+		if err != nil {
+			return nil, err
+		}
+		i.model = m
 	}
-	i.model = m
 
 	// INSERT INTO `test_model`
-	i.quote(m.TableName)
+	i.quote(i.model.TableName)
 
 	// 用一个变量来代替m.Fields进行操作，防止m.Fields被污染
 	// 而且操作更方便，减少了if else 的判断
-	fields := m.Fields
+	fields := i.model.Fields
 	if len(i.columns) > 0 {
 		fields = make([]*model.Field, 0, len(i.columns))
 		for _, fd := range i.columns {
-			fdMeta, ok := m.FieldMap[fd]
+			fdMeta, ok := i.model.FieldMap[fd]
 			// 传入了乱七八糟的列
 			if !ok {
 				return nil, errs.NewErrUnknownField(fd)
@@ -133,7 +138,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	i.sb.WriteByte(')')
 
 	i.sb.WriteString(" VALUES ")
-	args := make([]any, 0, n*len(m.Fields))
+	args := make([]any, 0, n*len(i.model.Fields))
 
 	for j, v := range i.values {
 		if j > 0 {
@@ -159,7 +164,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	}
 
 	if i.onDuplicateKey != nil {
-		err = i.dialect.buildOnDuplicateKey(&i.builder, i.onDuplicateKey)
+		err := i.dialect.buildOnDuplicateKey(&i.builder, i.onDuplicateKey)
 		if err != nil {
 			return nil, err
 		}
@@ -175,15 +180,46 @@ func (i *Inserter[T]) Build() (*Query, error) {
 
 // Exec 执行
 func (i *Inserter[T]) Exec(ctx context.Context) Result {
-	q, err := i.Build()
+	var err error
+	i.model, err = i.r.Get(i.values[0])
 	if err != nil {
 		return Result{
 			err: err,
 		}
 	}
-	res, err := i.sess.execContext(ctx, q.SQL, q.Args...)
+	root := i.execHandler
+	for j := len(i.mdls) - 1; j >= 0; j-- {
+		root = i.mdls[j](root)
+	}
+	res := root(ctx, &QueryContext{
+		Type:    "INSERT",
+		Builder: i,
+		Model:   i.model,
+	})
+	var sqlRes sql.Result
+	if res.Result != nil {
+		sqlRes = res.Result.(sql.Result)
+	}
 	return Result{
-		res: res,
-		err: err,
+		err: res.Err,
+		res: sqlRes,
+	}
+}
+
+func (i *Inserter[T]) execHandler(ctx context.Context, qc *QueryContext) *QueryResult {
+	q, err := i.Build()
+	if err != nil {
+		return &QueryResult{
+			Result: Result{
+				err: err,
+			},
+		}
+	}
+	res, err := i.sess.execContext(ctx, q.SQL, q.Args...)
+	return &QueryResult{
+		Result: Result{
+			err: err,
+			res: res,
+		},
 	}
 }

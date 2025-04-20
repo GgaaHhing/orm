@@ -104,3 +104,9 @@ func MistOpen(driverName, dataSourceName string, opts ...DBOption) *DB {
 	}
 	return res
 }
+
+func DBWithMiddleware(mdls ...Middleware) DBOption {
+	return func(r *DB) {
+		r.mdls = mdls
+	}
+}

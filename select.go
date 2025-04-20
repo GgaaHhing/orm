@@ -45,13 +45,12 @@ func NewSelector[T any](sess Session) *Selector[T] {
 // Build 解析字段，构造对应的查询语句
 func (s *Selector[T]) Build() (*Query, error) {
 	var err error
-
-	// 解析model
-	s.model, err = s.r.Get(new(T))
-	if err != nil {
-		return nil, err
+	if s.model == nil {
+		s.model, err = s.r.Get(new(T))
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	s.sb.WriteString("SELECT ")
 	err = s.buildColumns()
 	if err != nil {
@@ -274,24 +273,56 @@ func (s *Selector[T]) Where(ps ...Predicate) *Selector[T] {
 
 // Get 将对应的查询语句发给数据库并接收返回的查询结果
 func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
+	var err error
+	s.model, err = s.r.Get(new(T))
+	if err != nil {
+		return nil, err
+	}
+	root := s.getHandler
+	for i := len(s.mdls) - 1; i >= 0; i-- {
+		root = s.mdls[i](root)
+	}
+	res := root(ctx, &QueryContext{
+		Type:    "SELECT",
+		Builder: s,
+		Model:   s.model,
+	})
+	if res.Result != nil {
+		return res.Result.(*T), res.Err
+	}
+	return nil, res.Err
+}
+
+var _ Handler = (&Selector[any]{}).getHandler
+
+func (s *Selector[T]) getHandler(ctx context.Context, qc *QueryContext) *QueryResult {
 	// 构造查询
 	q, err := s.Build()
 	if err != nil {
-		return nil, err
+		return &QueryResult{
+			Err: err,
+		}
 	}
 
 	rows, err := s.sess.queryContext(ctx, q.SQL, q.Args)
 	if err != nil {
-		return nil, err
+		return &QueryResult{
+			Err: err,
+		}
 	}
 
 	if !rows.Next() {
-		return nil, ErrNoRows
+		return &QueryResult{
+			Err: ErrNoRows,
+		}
 	}
 	tp := new(T)
 	val := s.creator(s.model, tp)
 	err = val.SetColumn(rows)
-	return tp, err
+	return &QueryResult{
+		Result: tp,
+		Err:    err,
+	}
 }
 
 func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
