@@ -46,8 +46,6 @@ type Assignable interface {
 	assign()
 }
 
-var _ Handler = (&Inserter[any]{}).execHandler
-
 type Inserter[T any] struct {
 	// 定义成切片，是为了方便插入同一个结构体的多行列
 	values []*T
@@ -181,21 +179,18 @@ func (i *Inserter[T]) Build() (*Query, error) {
 // Exec 执行
 func (i *Inserter[T]) Exec(ctx context.Context) Result {
 	var err error
-	i.model, err = i.r.Get(i.values[0])
+	i.model, err = i.r.Get(new(T))
 	if err != nil {
 		return Result{
 			err: err,
 		}
 	}
-	root := i.execHandler
-	for j := len(i.mdls) - 1; j >= 0; j-- {
-		root = i.mdls[j](root)
-	}
-	res := root(ctx, &QueryContext{
+	res := exec(ctx, i.sess, i.core, &QueryContext{
 		Type:    "INSERT",
 		Builder: i,
 		Model:   i.model,
 	})
+
 	var sqlRes sql.Result
 	if res.Result != nil {
 		sqlRes = res.Result.(sql.Result)
@@ -206,20 +201,20 @@ func (i *Inserter[T]) Exec(ctx context.Context) Result {
 	}
 }
 
-func (i *Inserter[T]) execHandler(ctx context.Context, qc *QueryContext) *QueryResult {
-	q, err := i.Build()
-	if err != nil {
-		return &QueryResult{
-			Result: Result{
-				err: err,
-			},
-		}
-	}
-	res, err := i.sess.execContext(ctx, q.SQL, q.Args...)
-	return &QueryResult{
-		Result: Result{
-			err: err,
-			res: res,
-		},
-	}
-}
+//func (i *Inserter[T]) execHandler(ctx context.Context, qc *QueryContext) *QueryResult {
+//	q, err := i.Build()
+//	if err != nil {
+//		return &QueryResult{
+//			Result: Result{
+//				err: err,
+//			},
+//		}
+//	}
+//	res, err := i.sess.execContext(ctx, q.SQL, q.Args...)
+//	return &QueryResult{
+//		Result: Result{
+//			err: err,
+//			res: res,
+//		},
+//	}
+//}

@@ -1,6 +1,8 @@
 package orm
 
 type Column struct {
+	// 代表该列属于哪个table
+	table TableReference
 	name  string
 	alias string
 }
@@ -13,7 +15,10 @@ func C(name string) Column {
 func (c Column) assign() {}
 
 func (c Column) As(alias string) Column {
-	return Column{name: c.name, alias: alias}
+	return Column{name: c.name,
+		alias: alias,
+		table: c.table,
+	}
 }
 
 // Eq =

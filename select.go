@@ -17,7 +17,7 @@ type Selectable interface {
 
 type Selector[T any] struct {
 	builder
-	table string
+	table TableReference
 	// 在where下面有各种条件
 	where []Predicate
 
@@ -59,17 +59,21 @@ func (s *Selector[T]) Build() (*Query, error) {
 
 	s.sb.WriteString(" FROM ")
 
-	if s.table != "" {
-		// 防止用户传一些嵌套表名之类的
-		// 干脆如果用户有特殊需求，就自己传表名和反引号
-		//s.sb.WriteByte('`')
-		s.sb.WriteString(s.table)
-		//s.sb.WriteByte('`')
-	} else {
-		s.sb.WriteByte('`')
-		s.sb.WriteString(s.model.TableName)
-		s.sb.WriteByte('`')
+	if err = s.buildTable(s.table); err != nil {
+		return nil, err
 	}
+
+	//if s.table != "" {
+	//	// 防止用户传一些嵌套表名之类的
+	//	// 干脆如果用户有特殊需求，就自己传表名和反引号
+	//	//s.sb.WriteByte('`')
+	//	s.sb.WriteString(s.table)
+	//	//s.sb.WriteByte('`')
+	//} else {
+	//	s.sb.WriteByte('`')
+	//	s.sb.WriteString(s.model.TableName)
+	//	s.sb.WriteByte('`')
+	//}
 
 	if len(s.where) > 0 {
 		s.sb.WriteString(" WHERE ")
@@ -115,6 +119,69 @@ func (s *Selector[T]) Build() (*Query, error) {
 		SQL:  s.sb.String(),
 		Args: s.args,
 	}, nil
+}
+
+func (s *Selector[T]) buildTable(table TableReference) error {
+	switch t := table.(type) {
+	case nil:
+		// 没有调用From，使用默认的逻辑
+		s.quote(s.model.TableName)
+	case Table:
+		// 解析元数据
+		m, err := s.r.Get(t.entity)
+		if err != nil {
+			return err
+		}
+		s.quote(m.TableName)
+		if t.alias != "" {
+			s.sb.WriteString(" AS ")
+			s.quote(t.alias)
+		}
+	case Join:
+		s.sb.WriteByte('(')
+		// 构造右边
+		err := s.buildTable(t.left)
+		if err != nil {
+			return err
+		}
+		s.sb.WriteString(t.typ)
+		err = s.buildTable(t.right)
+		if err != nil {
+			return err
+		}
+		s.sb.WriteByte(')')
+
+		if len(t.using) > 0 {
+			s.sb.WriteString(" USING (")
+			for i, col := range t.using {
+				if i > 0 {
+					s.sb.WriteByte(',')
+				}
+				err = s.buildColumn(Column{name: col})
+				if err != nil {
+					return err
+				}
+			}
+			s.sb.WriteString(")")
+		}
+
+		if len(t.on) > 0 {
+			s.sb.WriteString(" ON ")
+			p := t.on[0]
+			for i := 1; i < len(t.on); i++ {
+				p = p.And(t.on[i])
+			}
+			// HAVING COUNT(`age`) > ?
+			// Aggregate opGt value
+			if err = s.buildExpression(p); err != nil {
+				return err
+			}
+		}
+
+	default:
+		return errs.NewErrUnsupportedTable(table)
+	}
+	return nil
 }
 
 func (s *Selector[T]) buildExpression(expr Expression) error {
@@ -238,25 +305,7 @@ func (s *Selector[T]) buildColumns() error {
 	return nil
 }
 
-// buildColumn 如果是列名，我们就把它构造成 `age` 这样的形式
-func (s *Selector[T]) buildColumn(col Column) error {
-	fd, ok := s.model.FieldMap[col.name]
-	if !ok {
-		return errs.NewErrUnknownField(col.alias)
-	}
-	//s.quote(fd.ColName)
-	s.sb.WriteByte('`')
-	s.sb.WriteString(fd.ColName)
-	s.sb.WriteByte('`')
-	if col.alias != "" {
-		s.sb.WriteString(" AS `")
-		s.sb.WriteString(col.alias)
-		s.sb.WriteByte('`')
-	}
-	return nil
-}
-
-func (s *Selector[T]) From(table string) *Selector[T] {
+func (s *Selector[T]) From(table TableReference) *Selector[T] {
 	s.table = table
 	return s
 }
@@ -278,11 +327,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	if err != nil {
 		return nil, err
 	}
-	root := s.getHandler
-	for i := len(s.mdls) - 1; i >= 0; i-- {
-		root = s.mdls[i](root)
-	}
-	res := root(ctx, &QueryContext{
+	res := get[T](ctx, s.sess, s.core, &QueryContext{
 		Type:    "SELECT",
 		Builder: s,
 		Model:   s.model,
@@ -293,37 +338,27 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	return nil, res.Err
 }
 
-var _ Handler = (&Selector[any]{}).getHandler
-
-func (s *Selector[T]) getHandler(ctx context.Context, qc *QueryContext) *QueryResult {
-	// 构造查询
-	q, err := s.Build()
-	if err != nil {
-		return &QueryResult{
-			Err: err,
-		}
-	}
-
-	rows, err := s.sess.queryContext(ctx, q.SQL, q.Args)
-	if err != nil {
-		return &QueryResult{
-			Err: err,
-		}
-	}
-
-	if !rows.Next() {
-		return &QueryResult{
-			Err: ErrNoRows,
-		}
-	}
-	tp := new(T)
-	val := s.creator(s.model, tp)
-	err = val.SetColumn(rows)
-	return &QueryResult{
-		Result: tp,
-		Err:    err,
-	}
-}
+// Get 将对应的查询语句发给数据库并接收返回的查询结果
+//func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
+//	var err error
+//	s.model, err = s.r.Get(new(T))
+//	if err != nil {
+//		return nil, err
+//	}
+//	root := s.getHandler
+//	for i := len(s.mdls) - 1; i >= 0; i-- {
+//		root = s.mdls[i](root)
+//	}
+//	res := root(ctx, &QueryContext{
+//		Type:    "SELECT",
+//		Builder: s,
+//		Model:   s.model,
+//	})
+//	if res.Result != nil {
+//		return res.Result.(*T), res.Err
+//	}
+//	return nil, res.Err
+//}
 
 func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 	q, err := s.Build()
@@ -366,10 +401,6 @@ func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 		if err != nil {
 			return nil, err
 		}
-		// id name age
-		// name id age
-		// cs = name, id, age
-		// vals = [name, id, age]
 
 		// 获取了顺序之后，我们就需要将获得的数据写入到指定的结构体里
 		tp := new(T)

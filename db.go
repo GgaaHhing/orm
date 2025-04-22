@@ -3,6 +3,10 @@ package orm
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"log"
+	"time"
 	"web/orm/internal/errs"
 	"web/orm/internal/valuer"
 	"web/orm/model"
@@ -109,4 +113,15 @@ func DBWithMiddleware(mdls ...Middleware) DBOption {
 	return func(r *DB) {
 		r.mdls = mdls
 	}
+}
+
+// Wait 集成测试不会等待mysql的启动，所以需要加入wait确保mysql启动成功
+func (db *DB) Wait() error {
+	err := db.db.Ping()
+	for errors.Is(err, driver.ErrBadConn) {
+		log.Printf("等待数据库启动。。")
+		err = db.db.Ping()
+		time.Sleep(time.Second)
+	}
+	return err
 }

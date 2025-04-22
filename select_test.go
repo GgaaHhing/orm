@@ -10,6 +10,10 @@ import (
 	"web/orm/model"
 )
 
+func TestSelector_Join(t *testing.T) {
+	
+}
+
 func TestSelect_Build(t *testing.T) {
 	r := &DB{
 		core: core{
@@ -29,22 +33,6 @@ func TestSelect_Build(t *testing.T) {
 			name: "select no from",
 			//
 			builder: NewSelector[TestModel](r),
-			wantQuery: &Query{
-				SQL:  "SELECT * FROM `test_model`;",
-				Args: nil,
-			},
-		},
-		{
-			name:    "select from",
-			builder: NewSelector[TestModel](r).From("`TestModel`"),
-			wantQuery: &Query{
-				SQL:  "SELECT * FROM `TestModel`;",
-				Args: nil,
-			},
-		},
-		{
-			name:    "empty from",
-			builder: NewSelector[TestModel](r).From(""),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model`;",
 				Args: nil,

@@ -15,7 +15,6 @@ func TestInserter_Build(t *testing.T) {
 			r:       model.NewRegistry(),
 			dialect: DialectMySOL,
 			creator: valuer.NewReflectValue,
-			model:   &model.Model{},
 		},
 	}
 	testCases := []struct {

@@ -21,14 +21,55 @@ func (b *builder) quote(name string) {
 	b.sb.WriteByte(b.quoter)
 }
 
-func (b *builder) buildColumn(name string) error {
-	fd, ok := b.model.FieldMap[name]
-	if !ok {
-		return errs.NewErrUnknownField(name)
+// buildColumn 如果是列名，我们就把它构造成 `age` 这样的形式
+func (b *builder) buildColumn(col Column) error {
+	switch table := col.table.(type) {
+	case nil:
+		fd, ok := b.model.FieldMap[col.name]
+		if !ok {
+			return errs.NewErrUnknownField(col.alias)
+		}
+		//b.quote(fd.ColName)
+		b.sb.WriteByte('`')
+		b.sb.WriteString(fd.ColName)
+		b.sb.WriteByte('`')
+		if col.alias != "" {
+			b.sb.WriteString(" AS `")
+			b.sb.WriteString(col.alias)
+			b.sb.WriteByte('`')
+		}
+	case Table:
+		m, err := b.r.Get(table.entity)
+		if err != nil {
+			return err
+		}
+		fd, ok := m.FieldMap[col.name]
+		if !ok {
+			return errs.NewErrUnknownField(col.alias)
+		}
+		if table.alias != "" {
+			b.quote(table.alias)
+			b.sb.WriteByte('.')
+		}
+		b.quote(fd.ColName)
+		if col.alias != "" {
+			b.sb.WriteString(" AS ")
+			b.quote(col.alias)
+		}
+	default:
+		return errs.NewErrUnsupportedTable(table)
 	}
-	b.quote(fd.ColName)
 	return nil
 }
+
+//func (b *builder) buildColumn(name string) error {
+//	fd, ok := b.model.FieldMap[name]
+//	if !ok {
+//		return errs.NewErrUnknownField(name)
+//	}
+//	b.quote(fd.ColName)
+//	return nil
+//}
 
 func (b *builder) addArgs(args ...any) {
 	if len(args) == 0 {
